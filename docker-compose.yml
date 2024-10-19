@@ -1,0 +1,101 @@
+services:
+  backend_web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: todo_task_backend
+    volumes:
+      - .:/backend
+      - ./backend/static:/backend/backend/static
+      - ./backend/media:/backend/backend/media
+      - static_volume:/backend/backend/static  # Mounts a volume for Django static files
+      - media_volume:/backend/backend/media  # Mounts a volume for Django media files
+      - ./logs/django_log:/var/log
+      - ./logs/django_log/gunicorn:/var/log/gunicorn
+    networks:
+      - todo_task_network
+    env_file:
+      - ./.env.local
+    depends_on:
+      - postgres_db
+      - redis
+    restart: always
+    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --access-logfile '/var/log/gunicorn/access.log' --error-logfile '/var/log/gunicorn/error.log'  
+
+  postgres_db:
+    image: postgres:latest
+    container_name: todo_task_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # - ./data/db:/var/lib/postgresql/data
+    env_file:
+      - ./.env.local
+    networks:
+      - todo_task_network
+    restart: always
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin", "-d", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: todo_task_pgadmin
+    env_file:
+      - ./.env.local
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres_db
+    networks:
+      - todo_task_network
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: always
+
+  redis: 
+    image: redis:latest
+    container_name: todo_task_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    networks:
+      - todo_task_network
+    restart: always
+
+  nginx:
+    image: nginx:latest
+    container_name: todo_task_nginx
+    ports:
+      - "81:80"
+    networks:
+      - todo_task_network
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./logs/nginx:/var/log/nginx
+      # - ./backend/static:/backend/backend/static
+      # - ./backend/media:/backend/backend/media
+      - static_volume:/backend/backend/static  # Mounts a volume for Django static files
+      - media_volume:/backend/backend/media  # Mounts a volume for Django media files
+    depends_on:
+      - backend_web
+    restart: always
+
+networks:
+  todo_task_network:
+    name: todo_task_network
+    driver: bridge
+
+volumes:
+  redis-data:  # Defines the volume for Redis data persistence
+    name: todo_task_redis
+  postgres_data:  # Defines the volume for PostgreSQL data persistence
+    name: todo_task_db
+  pgadmin_data:  # Defines the volume for PgAdmin data persistence
+    name: todo_task_pgadmin
+  static_volume:  # Defines the volume for Django static files
+    name: todo_task_static
+  media_volume:  # Defines the volume for Django media files
+    name: todo_task_media
